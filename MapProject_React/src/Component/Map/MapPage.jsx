@@ -1,27 +1,27 @@
 import React, { useState, useEffect } from "react";
 import { MapContainer, TileLayer, Polygon, Marker, useMapEvents } from "react-leaflet";
-import L from "leaflet";
-import "leaflet/dist/leaflet.css";
 
 import useApi from "../hooks/useApi";
 import PolygonPanel from "./PolygonPanel";
 import ObjectsPanel from "./ObjectPanel";
 import MapDataPanel from "./MapDataPanel";
-import jeepPng from "../Png/jeep.png";
-import markerPng from "../Png/marker.png";
 import "./style.css";
 
-// תיקון בעיית ה-icons ב-Leaflet
+import iconRetinaUrl from 'leaflet/dist/images/marker-icon-2x.png';
+import iconUrl from 'leaflet/dist/images/marker-icon.png';
+import shadowUrl from 'leaflet/dist/images/marker-shadow.png';
+import jeepPng from "../Png/jeep.png";
+import markerPng from "../Png/marker.png";
+import "leaflet/dist/leaflet.css";
+
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
-  iconRetinaUrl: require('leaflet/dist/images/marker-icon-2x.png'),
-  iconUrl: require('leaflet/dist/images/marker-icon.png'),
-  shadowUrl: require('leaflet/dist/images/marker-shadow.png'),
+  iconRetinaUrl,
+  iconUrl,
+  shadowUrl,
 });
-
-const jeepIcon = new L.Icon({ iconUrl: jeepPng, iconSize: [36, 36], iconAnchor: [18, 18] });
-const MarkerIcon = new L.Icon({ iconUrl: markerPng, iconSize: [36, 36], iconAnchor: [18, 18] });
-
+export const jeepIcon = new L.Icon({ iconUrl: jeepPng, iconSize: [36, 36], iconAnchor: [18, 18] });
+export const MarkerIcon = new L.Icon({ iconUrl: markerPng, iconSize: [36, 36], iconAnchor: [18, 18] });
 function MapClickHandler({ drawingMode, onMapClick, placingObjectType, onPlaceObject }) {
   useMapEvents({
     click(e) {
@@ -55,7 +55,6 @@ export default function MapPage() {
     loadAll();
   }, []);
 
-  // --- POLYGONS ---
   const handleMapClickWhileDrawing = (latlng) => {
     if (tempVertices.length === 0) {
       setTempVertices([[latlng.lat, latlng.lng]]);
@@ -65,9 +64,7 @@ export default function MapPage() {
     const first = L.latLng(tempVertices[0][0], tempVertices[0][1]);
     const clicked = L.latLng(latlng.lat, latlng.lng);
     
-    // סגירת הפוליגון אם לוחצים קרוב לנקודה הראשונה
     if (first.distanceTo(clicked) < 10 && tempVertices.length >= 3) {
-      // הוסף את הנקודה הראשונה כנקודה אחרונה כדי לסגור את הפוליגון
       const closedVertices = [...tempVertices, [tempVertices[0][0], tempVertices[0][1]]];
       const newPolygon = { _id: null, vertices: closedVertices };
       setPolygons(prev => [...prev, newPolygon]);
@@ -146,16 +143,12 @@ export default function MapPage() {
     } else if (polygon.polygon && polygon.polygon.coordinates) {
       coordinates = polygon.polygon.coordinates[0];
     } else if (polygon.vertices) {
-      // אם זה פוליגון מקומי שעדיין לא נשמר
       return polygon.vertices;
     } else {
       return [];
     }
     
-    // המרה מ-[lng, lat] ל-[lat, lng] והסרת הנקודה האחרונה אם היא כפולה (פוליגון סגור)
     const positions = coordinates.map(c => [c[1], c[0]]);
-    
-    // אם הנקודה הראשונה והאחרונה זהות, הסר את האחרונה להצגה
     if (positions.length > 1 && 
         positions[0][0] === positions[positions.length - 1][0] &&
         positions[0][1] === positions[positions.length - 1][1]) {
@@ -195,7 +188,7 @@ export default function MapPage() {
 
   const onSaveObjects = async () => {
     try {
-      const objectsToSave = objects.filter(o => !o._id); // שמור רק אובייקטים חדשים
+      const objectsToSave = objects.filter(o => !o._id); 
       
       if (objectsToSave.length === 0) {
         alert("אין אובייקטים חדשים לשמירה");
@@ -252,9 +245,8 @@ export default function MapPage() {
 
   const getObjectPosition = (obj) => {
     if (obj.location && obj.location.coordinates) {
-      return [obj.location.coordinates[1], obj.location.coordinates[0]]; // [lat, lng]
+      return [obj.location.coordinates[1], obj.location.coordinates[0]]; 
     }
-    // גיבוי למבנה הישן
     return [obj.lat, obj.lng];
   };
 

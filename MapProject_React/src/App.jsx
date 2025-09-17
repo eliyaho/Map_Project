@@ -1,7 +1,6 @@
 // App.js
 import React, { useState } from 'react';
-import { BrowserRouter, Route, Router, Routes, useNavigate } from 'react-router-dom';
-import { useEffect } from 'react';
+import { BrowserRouter, Route, Routes} from 'react-router-dom';
 import MapPage from './Component/Map/MapPage';
 
 const App = () => {
