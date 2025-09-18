@@ -1,39 +1,39 @@
-using Microsoft.AspNetCore.Http.Json;
-using MongoDB.Driver;
-using Newtonsoft.Json.Serialization;
+using MapServer.Services;
+using Microsoft.OpenApi.Models;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// הוספת שירותים עם NewtonsoftJson
-builder.Services.AddControllers()
-    .AddNewtonsoftJson(options =>
-    {
-        options.SerializerSettings.ContractResolver = new DefaultContractResolver();
-        options.SerializerSettings.ReferenceLoopHandling = Newtonsoft.Json.ReferenceLoopHandling.Ignore;
-    });
+builder.Services.Configure<MongoDbSettings>(builder.Configuration.GetSection("MongoDbSettings"));
+builder.Services.AddSingleton<PolygonService>();
+builder.Services.AddSingleton<ObjectsService>();
 
-// קונפיגורציה של MongoDB
-builder.Services.AddSingleton<IMongoClient>(serviceProvider =>
-{
-    var connectionString = builder.Configuration.GetConnectionString("MongoDB");
-    return new MongoClient(connectionString);
-});
-
-// הוספת CORS
 builder.Services.AddCors(options =>
 {
-    options.AddPolicy("AllowReactApp",
-        builder => builder
-            .WithOrigins("http://localhost:3000")
-            .AllowAnyMethod()
-            .AllowAnyHeader());
+    options.AddPolicy("AllowAll", 
+        policy =>
+        {
+            policy.AllowAnyOrigin() 
+                  .AllowAnyHeader()
+                  .AllowAnyMethod();
+        });
 });
+
+builder.Services.AddControllers().AddNewtonsoftJson();
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen();
 
 var app = builder.Build();
 
-// Middleware
-app.UseCors("AllowReactApp");
+app.UseCors("AllowAll");
+
+app.UseSwagger();
+app.UseSwaggerUI(c =>
+{
+    c.SwaggerEndpoint("/swagger/v1/swagger.json", "MapServer API v1");
+    c.RoutePrefix = string.Empty;
+});
+
+app.UseHttpsRedirection();
 app.UseAuthorization();
 app.MapControllers();
-
 app.Run();

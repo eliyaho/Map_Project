@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from "react";
 import { MapContainer, TileLayer, Polygon, Marker, useMapEvents } from "react-leaflet";
-
 import useApi from "../hooks/useApi";
 import PolygonPanel from "./PolygonPanel";
 import ObjectsPanel from "./ObjectPanel";
@@ -14,6 +13,7 @@ import jeepPng from "../Png/jeep.png";
 import markerPng from "../Png/marker.png";
 import "leaflet/dist/leaflet.css";
 
+// Fix for Leaflet icons
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
   iconRetinaUrl,
@@ -22,6 +22,7 @@ L.Icon.Default.mergeOptions({
 });
 export const jeepIcon = new L.Icon({ iconUrl: jeepPng, iconSize: [36, 36], iconAnchor: [18, 18] });
 export const MarkerIcon = new L.Icon({ iconUrl: markerPng, iconSize: [36, 36], iconAnchor: [18, 18] });
+
 function MapClickHandler({ drawingMode, onMapClick, placingObjectType, onPlaceObject }) {
   useMapEvents({
     click(e) {
@@ -45,7 +46,10 @@ export default function MapPage() {
   useEffect(() => {
     async function loadAll() {
       try {
-        const [polys, objs] = await Promise.all([api.list("polygons"), api.list("objects")]);
+        const [polys, objs] = await Promise.all([
+          api.list("polygon"),
+          api.list("objects")
+        ]);
         setPolygons(polys || []);
         setObjects(objs || []);
       } catch (err) {
@@ -91,7 +95,6 @@ export default function MapPage() {
   const onSavePolygon = async () => {
     if (tempVertices.length < 3) return alert("צריך לפחות 3 נקודות כדי ליצור פוליגון");
 
-    // וודא שהפוליגון סגור - הוסף את הנקודה הראשונה כנקודה האחרונה אם חסר
     let closedVertices = [...tempVertices];
     if (closedVertices.length > 0 && 
         (closedVertices[0][0] !== closedVertices[closedVertices.length - 1][0] ||
@@ -100,28 +103,25 @@ export default function MapPage() {
     }
 
     const polygonDoc = {
-      polygon: { 
-        type: "Polygon", 
-        coordinates: [closedVertices.map(c => [c[1], c[0]])] // [lng, lat]
-      },
-      properties: {},
+      vertices: closedVertices,
+      properties: {}
     };
 
     try {
-      const saved = await api.create("polygons", polygonDoc);
+      const saved = await api.create("polygon", polygonDoc);  
       setPolygons(prev => [...prev, saved]);
       setTempVertices([]);
       setDrawingMode(false);
     } catch (err) {
       console.error("שגיאה בשמירה:", err);
-      alert("שגיאה בשמירה");
+      alert("שגיאה בשמירת הפוליגון. בדוק אם השרת פעיל.");
     }
   };
 
   const onDeletePolygon = async () => {
     if (!selectedPolygonId) return alert("בחר פוליגון למחיקה");
     try {
-      await api.remove("polygons", selectedPolygonId);
+      await api.remove("polygon", selectedPolygonId);
       setPolygons(prev => prev.filter(p => String(p._id) !== String(selectedPolygonId)));
       setSelectedPolygonId(null);
     } catch (err) {
@@ -136,26 +136,10 @@ export default function MapPage() {
   };
 
   const polygonPositionsFromGeo = (polygon) => {
-    let coordinates = [];
-    
-    if (polygon.geometry && polygon.geometry.coordinates) {
-      coordinates = polygon.geometry.coordinates[0];
-    } else if (polygon.polygon && polygon.polygon.coordinates) {
-      coordinates = polygon.polygon.coordinates[0];
-    } else if (polygon.vertices) {
+    if (polygon.vertices) {
       return polygon.vertices;
-    } else {
-      return [];
     }
-    
-    const positions = coordinates.map(c => [c[1], c[0]]);
-    if (positions.length > 1 && 
-        positions[0][0] === positions[positions.length - 1][0] &&
-        positions[0][1] === positions[positions.length - 1][1]) {
-      return positions.slice(0, -1);
-    }
-    
-    return positions;
+    return [];
   };
 
   // --- OBJECTS ---
@@ -210,7 +194,7 @@ export default function MapPage() {
       };
       
       const result = await api.create("objects/bulk", payload);
-      setObjects(result || []);
+      setObjects(prev => [...prev.filter(o => o._id), ...result]);
       alert("אובייקטים נשמרו בהצלחה");
     } catch (err) {
       console.error(err);
