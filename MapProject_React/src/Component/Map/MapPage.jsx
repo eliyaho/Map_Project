@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useEffect } from "react";
 import { MapContainer, TileLayer, Polygon, Marker, useMapEvents } from "react-leaflet";
 import useApi from "../hooks/useApi";
 import PolygonPanel from "./PolygonPanel";
@@ -6,237 +6,131 @@ import ObjectsPanel from "./ObjectPanel";
 import MapDataPanel from "./MapDataPanel";
 import "./style.css";
 
-import iconRetinaUrl from 'leaflet/dist/images/marker-icon-2x.png';
-import iconUrl from 'leaflet/dist/images/marker-icon.png';
-import shadowUrl from 'leaflet/dist/images/marker-shadow.png';
+import iconRetinaUrl from "leaflet/dist/images/marker-icon-2x.png";
+import iconUrl from "leaflet/dist/images/marker-icon.png";
+import shadowUrl from "leaflet/dist/images/marker-shadow.png";
 import jeepPng from "../Png/jeep.png";
 import markerPng from "../Png/marker.png";
 import "leaflet/dist/leaflet.css";
 
-// Fix for Leaflet icons
-delete L.Icon.Default.prototype._getIconUrl;
-L.Icon.Default.mergeOptions({
-  iconRetinaUrl,
-  iconUrl,
-  shadowUrl,
-});
-export const jeepIcon = new L.Icon({ iconUrl: jeepPng, iconSize: [36, 36], iconAnchor: [18, 18] });
-export const MarkerIcon = new L.Icon({ iconUrl: markerPng, iconSize: [36, 36], iconAnchor: [18, 18] });
+import { useSelector, useDispatch } from "react-redux";
+import {
+  setObjects,
+  addObject,
+  removeObject,
+  setSelectedObjectId,
+} from "../../redax/objectsSlice";
+import {
+  setPolygons,
+  addPolygon,
+  removePolygon,
+  setDrawingMode,
+  setTempVertices,
+  setSelectedPolygonId,
+} from "../../redax/polygonsSlice";
+import { setPlacingObjectType } from "../../redax/uiSlice";
 
-function MapClickHandler({ drawingMode, onMapClick, placingObjectType, onPlaceObject }) {
+// תיקון לאייקונים של leaflet
+delete L.Icon.Default.prototype._getIconUrl;
+L.Icon.Default.mergeOptions({ iconRetinaUrl, iconUrl, shadowUrl });
+
+export const jeepIcon = new L.Icon({
+  iconUrl: jeepPng,
+  iconSize: [36, 36],
+  iconAnchor: [18, 18],
+});
+
+export const MarkerIcon = new L.Icon({
+  iconUrl: markerPng,
+  iconSize: [36, 36],
+  iconAnchor: [18, 18],
+});
+
+function MapClickHandler({ drawingMode, placingObjectType, onMapClick }) {
+  const dispatch = useDispatch();
+
   useMapEvents({
     click(e) {
-      if (drawingMode) onMapClick(e.latlng);
-      else if (placingObjectType) onPlaceObject(e.latlng, placingObjectType);
+      if (drawingMode) {
+        onMapClick(e.latlng);
+      } else if (placingObjectType) {
+        const newObj = {
+          _id: null,
+          id: `local-${Date.now()}`,
+          location: { coordinates: [e.latlng.lng, e.latlng.lat] },
+          type: placingObjectType,
+        };
+        dispatch(addObject(newObj));
+        dispatch(setPlacingObjectType(null));
+      }
     },
   });
+
   return null;
 }
 
+
 export default function MapPage() {
   const api = useApi("http://localhost:5297/api");
-  const [polygons, setPolygons] = useState([]);
-  const [objects, setObjects] = useState([]);
-  const [drawingMode, setDrawingMode] = useState(false);
-  const [tempVertices, setTempVertices] = useState([]);
-  const [selectedPolygonId, setSelectedPolygonId] = useState(null);
-  const [selectedObjectId, setSelectedObjectId] = useState(null);
-  const [placingObjectType, setPlacingObjectType] = useState(null);
+  const dispatch = useDispatch();
 
-  useEffect(() => {
-    async function loadAll() {
-      try {
-        const [polys, objs] = await Promise.all([
-          api.list("polygon"),
-          api.list("objects")
-        ]);
-        setPolygons(polys || []);
-        setObjects(objs || []);
-      } catch (err) {
-        console.error("Error loading data:", err);
-      }
+  // --- Redux selectors ---
+  const polygons = useSelector((state) => state.polygons.list);
+  const drawingMode = useSelector((state) => state.polygons.drawingMode);
+  const tempVertices = useSelector((state) => state.polygons.tempVertices);
+  const selectedPolygonId = useSelector((state) => state.polygons.selectedPolygonId);
+  const objects = useSelector((state) => state.objects.list);
+  const selectedObjectId = useSelector((state) => state.objects.selectedObjectId);
+  const placingObjectType = useSelector((state) => state.ui.placingObjectType);
+
+  // --- Load data from API ---
+ useEffect(() => {
+  async function loadPolygons() {
+    try {
+      const data = await api.list("polygon");
+      const dataob = await api.list("objects");
+      dispatch(setObjects(dataob));
+      dispatch(setPolygons(data));
+    } catch (err) {
+      console.error("❌ שגיאה בטעינת פוליגונים:", err);
     }
-    loadAll();
-  }, []);
+  }
+  loadPolygons();
+}, [dispatch]);
 
+
+  // --- Polygon handlers ---
   const handleMapClickWhileDrawing = (latlng) => {
     if (tempVertices.length === 0) {
-      setTempVertices([[latlng.lat, latlng.lng]]);
+      dispatch(setTempVertices([[latlng.lat, latlng.lng]]));
       return;
     }
-    
     const first = L.latLng(tempVertices[0][0], tempVertices[0][1]);
     const clicked = L.latLng(latlng.lat, latlng.lng);
-    
     if (first.distanceTo(clicked) < 10 && tempVertices.length >= 3) {
       const closedVertices = [...tempVertices, [tempVertices[0][0], tempVertices[0][1]]];
-      const newPolygon = { _id: null, vertices: closedVertices };
-      setPolygons(prev => [...prev, newPolygon]);
-      setTempVertices([]);
-      setDrawingMode(false);
+      dispatch(addPolygon({ _id: null, vertices: closedVertices }));
+      dispatch(setTempVertices([]));
+      dispatch(setDrawingMode(false));
       return;
     }
-    
-    setTempVertices(prev => [...prev, [latlng.lat, latlng.lng]]);
-  };
-
-  const onStartAddPolygon = () => {
-    setDrawingMode(true);
-    setTempVertices([]);
-    setSelectedPolygonId(null);
-    setPlacingObjectType(null);
-  };
-
-  const onCancelDrawing = () => {
-    setDrawingMode(false);
-    setTempVertices([]);
-  };
-
-  const onSavePolygon = async () => {
-    if (tempVertices.length < 3) return alert("צריך לפחות 3 נקודות כדי ליצור פוליגון");
-
-    let closedVertices = [...tempVertices];
-    if (closedVertices.length > 0 && 
-        (closedVertices[0][0] !== closedVertices[closedVertices.length - 1][0] ||
-         closedVertices[0][1] !== closedVertices[closedVertices.length - 1][1])) {
-      closedVertices.push([closedVertices[0][0], closedVertices[0][1]]);
-    }
-
-    const polygonDoc = {
-      vertices: closedVertices,
-      properties: {}
-    };
-
-    try {
-      const saved = await api.create("polygon", polygonDoc);  
-      setPolygons(prev => [...prev, saved]);
-      setTempVertices([]);
-      setDrawingMode(false);
-    } catch (err) {
-      console.error("שגיאה בשמירה:", err);
-      alert("שגיאה בשמירת הפוליגון. בדוק אם השרת פעיל.");
-    }
-  };
-
-  const onDeletePolygon = async () => {
-    if (!selectedPolygonId) return alert("בחר פוליגון למחיקה");
-    try {
-      await api.remove("polygon", selectedPolygonId);
-      setPolygons(prev => prev.filter(p => String(p._id) !== String(selectedPolygonId)));
-      setSelectedPolygonId(null);
-    } catch (err) {
-      console.error(err);
-      alert("שגיאה במחיקה");
-    }
+    dispatch(setTempVertices([...tempVertices, [latlng.lat, latlng.lng]]));
   };
 
   const onPolygonClick = (idx, p) => {
-    setSelectedPolygonId(p._id || `local-${idx}`);
-    setSelectedObjectId(null);
+    dispatch(setSelectedPolygonId(p._id || `local-${idx}`));
+    dispatch(setSelectedObjectId(null));
   };
+  
+  const polygonPositionsFromGeo = (polygon) => polygon.vertices || [];
+  const getObjectPosition = (obj) =>
+    obj.location?.coordinates ? [obj.location.coordinates[1], obj.location.coordinates[0]] : [obj.lat, obj.lng];
+  const getObjectType = (obj) => obj.type || "marker";
 
-  const polygonPositionsFromGeo = (polygon) => {
-    if (polygon.vertices) {
-      return polygon.vertices;
-    }
-    return [];
-  };
-
-  // --- OBJECTS ---
-  const onAddMarker = () => {
-    setPlacingObjectType("marker");
-    setDrawingMode(false);
-    setSelectedObjectId(null);
-    setSelectedPolygonId(null);
-  };
-
-  const onAddJeep = () => {
-    setPlacingObjectType("jeep");
-    setDrawingMode(false);
-    setSelectedObjectId(null);
-    setSelectedPolygonId(null);
-  };
-
-  const onPlaceObject = (latlng, type) => {
-    const newObj = { 
-      _id: null, 
-      id: `local-${Date.now()}`, 
-      location: {
-        coordinates: [latlng.lng, latlng.lat] // [lng, lat]
-      },
-      type 
-    };
-    setObjects(prev => [...prev, newObj]);
-    setPlacingObjectType(null);
-  };
-
-  const onSaveObjects = async () => {
-    try {
-      const objectsToSave = objects.filter(o => !o._id); 
-      
-      if (objectsToSave.length === 0) {
-        alert("אין אובייקטים חדשים לשמירה");
-        return;
-      }
-
-      const payload = {
-        features: objectsToSave.map(o => ({
-          type: "Feature",
-          geometry: { 
-            type: "Point", 
-            coordinates: o.location.coordinates
-          },
-          properties: { 
-            type: o.type, 
-            localId: o.id 
-          },
-        }))
-      };
-      
-      const result = await api.create("objects/bulk", payload);
-      setObjects(prev => [...prev.filter(o => o._id), ...result]);
-      alert("אובייקטים נשמרו בהצלחה");
-    } catch (err) {
-      console.error(err);
-      alert("שגיאה בשמירת אובייקטים");
-    }
-  };
-
-  const onDeleteObject = async () => {
-    if (!selectedObjectId) return alert("בחר אובייקט למחיקה");
-    
-    // אם זה אובייקט מקומי (לא נשמר עוד)
-    if (selectedObjectId.startsWith("local-")) {
-      setObjects(prev => prev.filter(o => o.id !== selectedObjectId));
-      setSelectedObjectId(null);
-      return;
-    }
-    
-    try {
-      await api.remove("objects", selectedObjectId);
-      setObjects(prev => prev.filter(o => String(o._id) !== String(selectedObjectId)));
-      setSelectedObjectId(null);
-    } catch (err) {
-      console.error(err);
-      alert("שגיאה במחיקת אובייקט");
-    }
-  };
-
-  const onObjectClick = (o) => {
-    setSelectedObjectId(o._id || o.id);
-    setSelectedPolygonId(null);
-  };
-
-  const getObjectPosition = (obj) => {
-    if (obj.location && obj.location.coordinates) {
-      return [obj.location.coordinates[1], obj.location.coordinates[0]]; 
-    }
-    return [obj.lat, obj.lng];
-  };
-
-  const getObjectType = (obj) => {
-    return obj.type || "marker";
-  };
+  const onObjectClick = (obj) => {
+  dispatch(setSelectedObjectId(obj._id || obj.id));
+  dispatch(setSelectedPolygonId(null));
+};
 
   return (
     <div style={{ display: "flex", height: "100vh" }}>
@@ -244,11 +138,11 @@ export default function MapPage() {
         <MapContainer center={[32.0853, 34.7818]} zoom={12} style={{ height: "100%", width: "100%" }}>
           <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
           <MapClickHandler
-            drawingMode={drawingMode}
-            onMapClick={handleMapClickWhileDrawing}
-            placingObjectType={placingObjectType}
-            onPlaceObject={onPlaceObject}
-          />
+          drawingMode={drawingMode}
+          onMapClick={handleMapClickWhileDrawing}
+          placingObjectType={placingObjectType}
+        />
+
           {polygons.map((p, idx) => (
             <Polygon
               key={p._id || `local-${idx}`}
@@ -260,7 +154,7 @@ export default function MapPage() {
           {drawingMode && tempVertices.length > 0 && (
             <Polygon positions={tempVertices} pathOptions={{ color: "green", dashArray: "5,5" }} />
           )}
-          {objects.map(o => (
+          {objects.map((o) => (
             <Marker
               key={o._id || o.id}
               position={getObjectPosition(o)}
@@ -270,28 +164,24 @@ export default function MapPage() {
           ))}
         </MapContainer>
       </div>
-
       <div style={{ width: "30%", padding: 12, boxSizing: "border-box", background: "#fafafa", overflowY: "auto" }}>
         <PolygonPanel
           drawingMode={drawingMode}
           tempVertices={tempVertices}
-          onStartAddPolygon={onStartAddPolygon}
-          onCancelDrawing={onCancelDrawing}
-          onSavePolygon={onSavePolygon}
-          onDeletePolygon={onDeletePolygon}
         />
-        <ObjectsPanel
-          placingObjectType={placingObjectType}
-          onAddMarker={onAddMarker}
-          onAddJeep={onAddJeep}
-          onSaveObjects={onSaveObjects}
-          onDeleteObject={onDeleteObject}
+        <ObjectsPanel onAddObjectType={(type) => {
+          dispatch(setPlacingObjectType(type));
+          dispatch(setDrawingMode(false));
+        }} />
+        <MapDataPanel
+          objects={objects}
+          polygons={polygons}
+          selectedObjectId={selectedObjectId}
+          selectedPolygonId={selectedPolygonId}
+          onSelectObject={onObjectClick}
+          onSelectPolygon={(p) => dispatch(setSelectedPolygonId(p._id || p.id))}
         />
-        <MapDataPanel 
-          objects={objects} 
-          selectedObjectId={selectedObjectId} 
-          onSelect={onObjectClick} 
-        />
+
       </div>
     </div>
   );
